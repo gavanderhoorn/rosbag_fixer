@@ -17,11 +17,11 @@ def main():
 
     if not os.path.isfile(args.inbag):
         sys.stderr.write('Cannot locate input bag file [%s]\n' % args.inbag)
-        sys.exit(2)
+        sys.exit(os.EX_USAGE)
 
     if os.path.realpath(args.inbag) == os.path.realpath(args.outbag):
         sys.stderr.write('Cannot use same file as input and output [%s]\n' % args.inbag)
-        sys.exit(3)
+        sys.exit(os.EX_USAGE)
 
 
     # TODO: make this nicer. Figure out the complete msg text without relying on external files
