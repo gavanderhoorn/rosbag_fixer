@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import roslib.message
 import rosbag
 import argparse
 import sys
@@ -9,6 +10,7 @@ import os
 def main():
     parser = argparse.ArgumentParser()
     #parser.add_argument('-v', '--verbose', action='store_true', help='Be verbose')
+    parser.add_argument('-l', '--use-local-defs', dest='use_local', action='store_true', help='Use message defs from local system (as opposed to reading them from the provided mappings)')
     parser.add_argument('-c', '--callerid', type=str, help='Callerid (ie: publisher)')
     parser.add_argument('-m', '--map', dest='mappings', type=str, nargs=1, action='append', help='Mapping topic type -> good msg def (multiple allowed)', default=[])
     parser.add_argument('inbag', help='Input bagfile')
@@ -21,6 +23,10 @@ def main():
 
     if os.path.realpath(args.inbag) == os.path.realpath(args.outbag):
         sys.stderr.write('Cannot use same file as input and output [%s]\n' % args.inbag)
+        sys.exit(os.EX_USAGE)
+
+    if len(args.mappings) > 0 and args.use_local:
+        sys.stderr.write("Cannot use both mappings and local defs.\n")
         sys.exit(os.EX_USAGE)
 
 
@@ -40,8 +46,9 @@ def main():
                 #print (msg_def_maps[map_msg])
 
     else:
-        print ("No mappings provided. That is ok, but this won't fix anything like this.")
-
+        if not args.use_local:
+            print ("No mappings provided and not allowed to use local msg defs. "
+                   "That is ok, but this won't fix anything like this.")
 
     print ("")
 
@@ -52,16 +59,26 @@ def main():
     conxs = bag._get_connections(connection_filter=lambda topic, datatype, md5sum, msg_def, header: header['callerid'] == args.callerid)
     print ("Topics in input bag for callerid '{}':".format(args.callerid))
     for conx in conxs:
-        sys.stdout.write("  {:40s} ({}): ".format(conx.topic, conx.datatype))
+        msg_type = conx.datatype
+        sys.stdout.write("  {:40s} ({}): ".format(conx.topic, msg_type))
 
         # see if we have a mapping for that
-        if conx.datatype in msg_def_maps:
-            # we do, replace msg def
-            conx.header['message_definition'] = msg_def_maps[conx.datatype]
-            conx.msg_def = msg_def_maps[conx.datatype]
-            print ("replaced")
-        else:
-            print ("no mapping found")
+        if not msg_type in msg_def_maps:
+            if not args.use_local:
+                print ("no mapping found")
+                continue
+
+            # don't have mapping, but are allowed to use local msg def: retrieve
+            # TODO: properly deal with get_message_class failing
+            sys_class = roslib.message.get_message_class(msg_type)
+            msg_def_maps[conx.datatype] = sys_class._full_text
+
+        # here, we either already had a mapping or one was just created
+        full_msg_text = msg_def_maps[msg_type]
+        conx.header['message_definition'] = full_msg_text
+        conx.msg_def = full_msg_text
+
+        print ("replaced")
 
 
     print ("")
