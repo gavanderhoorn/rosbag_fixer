@@ -56,7 +56,11 @@ def main():
     # open bag to fix
     bag = rosbag.Bag(args.inbag)
 
-    conxs = bag._get_connections(connection_filter=lambda topic, datatype, md5sum, msg_def, header: header['callerid'] == args.callerid)
+    # filter for all connections that pass the filter expression
+    # if no 'callerid' specified, returns all connections
+    conxs = bag._get_connections(connection_filter=
+        lambda topic, datatype, md5sum, msg_def, header:
+            header['callerid'] == args.callerid if args.callerid else True)
     print ("Topics in input bag for callerid '{}':".format(args.callerid))
     for conx in conxs:
         msg_type = conx.datatype
