@@ -1,10 +1,24 @@
 #!/usr/bin/env python
 
-import roslib.message
-import rosbag
 import argparse
-import sys
 import os
+import sys
+
+try:
+    import roslib.message
+except:
+    sys.stderr.write("Could not import 'roslib', make sure it is installed, "
+        "and make sure you have sourced the ROS environment setup file if "
+        "necessary.\n\n")
+    sys.exit(1)
+
+try:
+    import rosbag
+except:
+    sys.stderr.write("Could not import 'rosbag', make sure it is installed, "
+        "and make sure you have sourced the ROS environment setup file if "
+        "necessary.\n\n")
+    sys.exit(1)
 
 
 def main():
