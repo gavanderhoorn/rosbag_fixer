@@ -61,15 +61,28 @@ def main():
     conxs = bag._get_connections(connection_filter=
         lambda topic, datatype, md5sum, msg_def, header:
             header['callerid'] == args.callerid if args.callerid else True)
-    print ("Topics in input bag for callerid '{}':".format(args.callerid))
-    for conx in conxs:
-        msg_type = conx.datatype
-        sys.stdout.write("  {:40s} ({}): ".format(conx.topic, msg_type))
 
+    conxs = list(conxs)
+
+    if not conxs:
+        print ("No topics found for callerid '{}'. Make sure it is correct.\n".format(args.callerid))
+        sys.exit(1)
+
+
+    def_replaced = []
+    def_not_found = []
+    def_not_replaced = []
+
+    # loop over connections, find out which msg type they use and replace
+    # msg defs if needed. Note: this is a rather primitive way to approach
+    # this and absolutely not guaranteed to work.
+    # It does work for me though ..
+    for conx in conxs:
         # see if we have a mapping for that
+        msg_type = conx.datatype
         if not msg_type in msg_def_maps:
             if not args.use_local:
-                print ("no mapping found")
+                def_not_found.append((conx.topic, msg_type))
                 continue
 
             # don't have mapping, but are allowed to use local msg def: retrieve
@@ -79,20 +92,42 @@ def main():
 
         # here, we either already had a mapping or one was just created
         full_msg_text = msg_def_maps[msg_type]
+
+        # don't touch anything if not needed (note: primitive check)
+        if conx.header['message_definition'] == full_msg_text:
+            def_not_replaced.append((conx.topic, msg_type))
+            continue
+
+        # here we really should replace the msg def, so do it
         conx.header['message_definition'] = full_msg_text
         conx.msg_def = full_msg_text
 
-        print ("replaced")
+        def_replaced.append((conx.topic, msg_type))
 
 
-    print ("")
+    # print stats
+    if def_replaced:
+        print ("Replaced message definitions:")
+        for topic, mdef in def_replaced:
+            print ("  {:40s} : {}".format(mdef, topic))
+        print ("")
+
+    if def_not_replaced:
+        print ("Untouched message definitions (already ok):")
+        for topic, mdef in def_not_replaced:
+            print ("  {:40s} : {}".format(mdef, topic))
+        print ("")
+
+    if def_not_found:
+        print ("Message defs we couldn't find replacements for:")
+        for topic, mdef in def_not_found:
+            print ("  {:40s} : {}".format(mdef, topic))
+        print ("")
 
 
     # write result to new bag
-    # TODO: can this be done more efficient? We only changed the connection infos.
+    # TODO: can this be done more efficiently? We only changed the connection infos.
     outbag = rosbag.Bag(args.outbag, 'w')
-    #for topic, raw_msg, t in bag.read_messages(raw=True):
-    #    outbag.write(topic, raw_msg, t, raw=True)
 
     print ("Writing out fixed bag ..")
     # shamelessly copied from Rosbag itself
@@ -108,7 +143,7 @@ def main():
 
     meter.finish()
 
-    print ("done")
+    print ("\ndone")
     print ("\nThe new bag probably needs to be re-indexed. Use 'rosbag reindex {}' for that.\n".format(outbag.filename))
 
 
