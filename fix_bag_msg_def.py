@@ -23,7 +23,7 @@ except:
 
 def main():
     parser = argparse.ArgumentParser()
-    #parser.add_argument('-v', '--verbose', action='store_true', help='Be verbose')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Be verbose')
     parser.add_argument('-l', '--use-local-defs', dest='use_local', action='store_true', help='Use message defs from local system (as opposed to reading them from the provided mappings)')
     parser.add_argument('-c', '--callerid', type=str, help='Callerid (ie: publisher)')
     parser.add_argument('-m', '--map', dest='mappings', type=str, nargs=1, action='append', help='Mapping topic type -> good msg def (multiple allowed)', default=[])
@@ -120,20 +120,20 @@ def main():
 
 
     # print stats
-    if def_replaced:
-        print ("Replaced message definitions:")
+    if def_replaced and args.verbose:
+        print ("Replaced {} message definition(s):".format(len(def_replaced)))
         for topic, mdef in def_replaced:
             print ("  {:40s} : {}".format(mdef, topic))
         print ("")
 
-    if def_not_replaced:
-        print ("Untouched message definitions (already ok):")
+    if def_not_replaced and args.verbose:
+        print ("Skipped {} message definition(s) (already ok):".format(len(def_not_replaced)))
         for topic, mdef in def_not_replaced:
             print ("  {:40s} : {}".format(mdef, topic))
         print ("")
 
-    if def_not_found:
-        print ("Message defs we couldn't find replacements for:")
+    if def_not_found and args.verbose:
+        print ("Could not find {} message definition(s):".format(len(def_not_found)))
         for topic, mdef in def_not_found:
             print ("  {:40s} : {}".format(mdef, topic))
         print ("")
