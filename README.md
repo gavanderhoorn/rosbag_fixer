@@ -1,10 +1,3 @@
-# NOTE
-
-this script currently doesn't work correctly on Xenial&Kinetic (and probably also not on Bionic/Melodic).
-
-See [gavanderhoorn/rosbag_fixer#2](https://github.com/gavanderhoorn/rosbag_fixer/issues/2).
-
-
 # rosbag_fixer
 
 Quick tool to try and work around [Message Headers missing dependency information](https://github.com/rosjava/rosjava_bootstrap/issues/16).
