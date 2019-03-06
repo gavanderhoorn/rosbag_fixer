@@ -153,23 +153,24 @@ def main():
         print ("")
 
 
-    # write result to new bag
-    # TODO: can this be done more efficiently? We only changed the connection infos.
-    outbag = rosbag.Bag(args.outbag, 'w')
 
     print ("Writing out fixed bag ..")
-    # shamelessly copied from Rosbag itself
-    meter = rosbag.rosbag_main.ProgressMeter(outbag.filename, bag._uncompressed_size)
-    total_bytes = 0
-    for topic, msg, t in bag.read_messages(raw=True):
-        msg_type, serialized_bytes, md5sum, pos, pytype = msg
 
-        outbag.write(topic, msg, t, raw=True)
+    # write result to new bag
+    # TODO: can this be done more efficiently? We only changed the connection infos.
+    with rosbag.Bag(args.outbag, 'w') as outbag:
+        # shamelessly copied from Rosbag itself
+        meter = rosbag.rosbag_main.ProgressMeter(outbag.filename, bag._uncompressed_size)
+        total_bytes = 0
+        for topic, raw_msg, t in bag.read_messages(raw=True):
+            msg_type, serialized_bytes, md5sum, pos, pytype = raw_msg
 
-        total_bytes += len(serialized_bytes)
-        meter.step(total_bytes)
+            outbag.write(topic, raw_msg, t, raw=True)
 
-    meter.finish()
+            total_bytes += len(serialized_bytes)
+            meter.step(total_bytes)
+
+        meter.finish()
 
     print ("\ndone")
     print ("\nThe new bag probably needs to be re-indexed. Use 'rosbag reindex {}' for that.\n".format(outbag.filename))
