@@ -40,3 +40,5 @@ Replace all message definitions for connections with caller id `my_publisher`:
 ```
 fix_bag_msg_def.py --use-local-defs -c '/my_publisher' /path/to/input.bag /path/to/output.bag
 ```
+
+Note: caller ids are not necessarily equal to node or topic names.
