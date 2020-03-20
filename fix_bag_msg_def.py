@@ -116,6 +116,9 @@ def main():
             # don't have mapping, but are allowed to use local msg def: retrieve
             # TODO: properly deal with get_message_class failing
             sys_class = roslib.message.get_message_class(msg_type)
+            if sys_class is None:
+                print("Message class '" + msg_type + "' not found.")
+                exit(1)
             msg_def_maps[conx.datatype] = sys_class._full_text
 
         # here, we either already had a mapping or one was just created
