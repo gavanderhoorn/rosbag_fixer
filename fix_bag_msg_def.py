@@ -14,7 +14,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+Attempts to fix missing or broken message definitions in ROS bags.
+"""
+
 import argparse
+import fnmatch
 import os
 import sys
 
@@ -35,34 +40,46 @@ except:
     sys.exit(1)
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-v', '--verbose', action='store_true', help='Be verbose')
-    parser.add_argument('-l', '--use-local-defs', dest='use_local', action='store_true', help='Use message defs from local system (as opposed to reading them from the provided mappings)')
-    parser.add_argument('-c', '--callerid', type=str, help='Callerid (ie: publisher)')
-    parser.add_argument('-m', '--map', dest='mappings', type=str, nargs=1, action='append', help='Mapping topic type -> good msg def (multiple allowed)', default=[])
-    parser.add_argument('inbag', help='Input bagfile')
-    parser.add_argument('outbag', help='Output bagfile')
-    args = parser.parse_args()
+def topic_matcher(topic, topic_patterns):
+    if topic_patterns:
+        return any([fnmatch.fnmatch(topic, p) for p in topic_patterns])
+    else:
+        return True
 
-    if not os.path.isfile(args.inbag):
-        sys.stderr.write('Cannot locate input bag file [%s]\n' % args.inbag)
-        sys.exit(os.EX_USAGE)
 
-    if os.path.realpath(args.inbag) == os.path.realpath(args.outbag):
-        sys.stderr.write('Cannot use same file as input and output [%s]\n' % args.inbag)
-        sys.exit(os.EX_USAGE)
+def dosys(cmd):
+    sys.stderr.write(cmd + '\n')
+    ret = os.system(cmd)
+    if ret != 0:
+        sys.stderr.write("Command failed with return value %s\n" % ret)
+    return ret
 
-    if len(args.mappings) > 0 and args.use_local:
-        sys.stderr.write("Cannot use both mappings and local defs.\n")
-        sys.exit(os.EX_USAGE)
 
+def fix_bag_msg_def(
+        inbag,
+        out_folder,
+        verbose=False,
+        use_local=False,
+        callerid=None,
+        mappings=[],
+        topic_patterns=[],
+        no_reindex=False,
+    ):
+    if not os.path.isfile(inbag):
+        sys.stderr.write('Cannot locate input bag file [%s]\n' % inbag)
+        return
+
+    outbag_path = os.path.join(out_folder, os.path.basename(inbag))
+
+    if os.path.exists(outbag_path):
+        sys.stderr.write('Not overwriting existing output file [%s]\n' % outbag_path)
+        return
 
     # TODO: make this nicer. Figure out the complete msg text without relying on external files
     msg_def_maps = {}
-    if len(args.mappings) > 0:
+    if len(mappings) > 0:
         print ("Mappings provided:")
-        for mapping in args.mappings:
+        for mapping in mappings:
             map_msg, map_file = mapping[0].split(':')
             print ("  {:40s}: {}".format(map_msg, map_file))
 
@@ -74,7 +91,7 @@ def main():
                 #print (msg_def_maps[map_msg])
 
     else:
-        if not args.use_local:
+        if not use_local:
             print ("No mappings provided and not allowed to use local msg defs. "
                    "That is ok, but this won't fix anything like this.")
 
@@ -82,20 +99,19 @@ def main():
 
 
     # open bag to fix
-    bag = rosbag.Bag(args.inbag)
+    bag = rosbag.Bag(inbag)
 
     # filter for all connections that pass the filter expression
     # if no 'callerid' specified, returns all connections
     conxs = bag._get_connections(connection_filter=
         lambda topic, datatype, md5sum, msg_def, header:
-            header['callerid'] == args.callerid if args.callerid else True)
+            header['callerid'] == callerid if callerid else True)
 
     conxs = list(conxs)
 
     if not conxs:
-        print ("No topics found for callerid '{}'. Make sure it is correct.\n".format(args.callerid))
+        print ("No topics found for callerid '{}'. Make sure it is correct.\n".format(callerid))
         sys.exit(1)
-
 
     def_replaced = []
     def_not_found = []
@@ -106,10 +122,14 @@ def main():
     # this and absolutely not guaranteed to work.
     # It does work for me though ..
     for conx in conxs:
+        # skip if topic patterns were specified and this topic doesn't match
+        if not topic_matcher(conx.topic, topic_patterns):
+            continue
+
         # see if we have a mapping for that
         msg_type = conx.datatype
         if not msg_type in msg_def_maps:
-            if not args.use_local:
+            if not use_local:
                 def_not_found.append((conx.topic, msg_type))
                 continue
 
@@ -136,19 +156,19 @@ def main():
 
 
     # print stats
-    if def_replaced and args.verbose:
+    if def_replaced and verbose:
         print ("Replaced {} message definition(s):".format(len(def_replaced)))
         for topic, mdef in def_replaced:
             print ("  {:40s} : {}".format(mdef, topic))
         print ("")
 
-    if def_not_replaced and args.verbose:
+    if def_not_replaced and verbose:
         print ("Skipped {} message definition(s) (already ok):".format(len(def_not_replaced)))
         for topic, mdef in def_not_replaced:
             print ("  {:40s} : {}".format(mdef, topic))
         print ("")
 
-    if def_not_found and args.verbose:
+    if def_not_found and verbose:
         print ("Could not find {} message definition(s):".format(len(def_not_found)))
         for topic, mdef in def_not_found:
             print ("  {:40s} : {}".format(mdef, topic))
@@ -160,9 +180,9 @@ def main():
 
     # write result to new bag
     # TODO: can this be done more efficiently? We only changed the connection infos.
-    with rosbag.Bag(args.outbag, 'w') as outbag:
+    with rosbag.Bag(outbag_path, 'w') as outbag:
         # shamelessly copied from Rosbag itself
-        meter = rosbag.rosbag_main.ProgressMeter(outbag.filename, bag._uncompressed_size)
+        meter = rosbag.rosbag_main.ProgressMeter(outbag_path, bag._uncompressed_size)
         total_bytes = 0
         for topic, raw_msg, t in bag.read_messages(raw=True):
             msg_type, serialized_bytes, md5sum, pos, pytype = raw_msg
@@ -175,7 +195,49 @@ def main():
         meter.finish()
 
     print ("\ndone")
-    print ("\nThe new bag probably needs to be re-indexed. Use 'rosbag reindex {}' for that.\n".format(outbag.filename))
+    cmd = "rosbag reindex %s" % outbag_path
+    if no_reindex:
+        print ("\nThe new bag probably needs to be re-indexed. Use '%s' for that.\n" % cmd)
+    else:
+        dosys(cmd)
+        dosys("rm %s" % (os.path.splitext(outbag_path)[0] + ".orig.bag"))
+    print("\nFixed bag at: %s" % outbag_path)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument('-v', '--verbose', action='store_true', help='Be verbose')
+    parser.add_argument('-l', '--use-local-defs', dest='use_local', action='store_true', help='Use message defs from local system (as opposed to reading them from the provided mappings)')
+    parser.add_argument('-c', '--callerid', type=str, help='Callerid (ie: publisher)')
+    parser.add_argument('-m', '--map', dest='mappings', type=str, nargs=1, action='append', help='Mapping topic type -> good msg def (multiple allowed)', default=[])
+    parser.add_argument('-t', '--topic', dest='topic_patterns', nargs='?', help='Operate only on topics matching this glob pattern (specify multiple times for multiple patterns)', action='append', default=[])
+    parser.add_argument('-n', '--no-reindex', action='store_true', help='Suppress "rosbag reindex" call', default=False)
+    parser.add_argument('-o', '--out-folder', help='Write output bagfiles to this folder."', default="fixed")
+    parser.add_argument('inbag', nargs='+', help='Input bagfile', default=[])
+    args = parser.parse_args()
+
+    if len(args.mappings) > 0 and args.use_local:
+        sys.stderr.write("Cannot use both mappings and local defs.\n")
+        sys.exit(os.EX_USAGE)
+
+    if not os.path.isdir(args.out_folder):
+        ret = dosys("mkdir -p %s" % args.out_folder)
+        if ret != 0:
+            sys.exit(os.EX_USAGE)
+
+    for inbag in args.inbag:
+        fix_bag_msg_def(
+            inbag,
+            out_folder=args.out_folder,
+            verbose=args.verbose,
+            use_local=args.use_local,
+            callerid=args.callerid,
+            mappings=args.mappings,
+            topic_patterns=args.topic_patterns,
+            no_reindex=args.no_reindex,
+        )
 
 
 if __name__ == '__main__':
